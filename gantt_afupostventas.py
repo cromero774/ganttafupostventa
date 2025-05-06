@@ -1,60 +1,70 @@
 import pandas as pd
 import plotly.express as px
-from dash import Dash, dcc, html, Input, Output
+from dash import Dash, dcc, html, Input, Output, State, callback_context
 import requests
 from datetime import datetime
+import time
 
 # --- Función de debug ---
 def debug_print(message):
-    pass  # Desactivado para entorno de producción
+    print(f"DEBUG: {message}")  # Activado para debug
 
-# --- Carga de datos ---
+# --- URL de la hoja de Google Sheets ---
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3rrcWGJWtEbowD_8bJ35lbziZ208DFGdo1JkHKhMvRK9SBjxxlTolXjeoKVMu4v447yfgQn0tUjsT/pub?output=csv"
 
-try:
-    response = requests.get(sheet_url, timeout=15)
-    response.raise_for_status()
-    df = pd.read_csv(sheet_url, encoding='utf-8')
-    df.columns = df.columns.str.strip().str.lower()  # ← Normalización de nombres
-    df['rn'] = df['rn'].astype(str).str.strip()
+# --- Función para cargar datos ---
+def cargar_datos():
+    debug_print(f"Cargando datos a las {datetime.now().strftime('%H:%M:%S')}")
+    try:
+        response = requests.get(sheet_url, timeout=15)
+        response.raise_for_status()
+        df = pd.read_csv(sheet_url, encoding='utf-8')
+        df.columns = df.columns.str.strip().str.lower()  # ← Normalización de nombres
+        df['rn'] = df['rn'].astype(str).str.strip()
 
-    if 'afu asignado' not in df.columns:
-        df['afu asignado'] = 'Sin asignar'
+        if 'afu asignado' not in df.columns:
+            df['afu asignado'] = 'Sin asignar'
 
-    for col in ['inicio', 'fin']:
-        try:
-            df[col] = pd.to_datetime(df[col], format='%d/%m/%Y', errors='coerce')
-        except:
+        for col in ['inicio', 'fin']:
             try:
-                df[col] = pd.to_datetime(df[col], format='%d-%m-%Y', errors='coerce')
+                df[col] = pd.to_datetime(df[col], format='%d/%m/%Y', errors='coerce')
             except:
                 try:
-                    df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
-                except Exception:
-                    pass
+                    df[col] = pd.to_datetime(df[col], format='%d-%m-%Y', errors='coerce')
+                except:
+                    try:
+                        df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
+                    except Exception:
+                        pass
 
-    df = df.dropna(subset=['inicio', 'fin'])
-    df['inicio_str'] = df['inicio'].dt.strftime('%d-%m-%Y')
-    df['fin_str'] = df['fin'].dt.strftime('%d-%m-%Y')
-    df['duracion'] = (df['fin'] - df['inicio']).dt.days
-    df['mes'] = df['fin'].dt.to_period('M').astype(str)
-    df['rn_trunc'] = df['rn'].str.lower().apply(lambda x: x if len(x) <= 30 else x[:27] + '...')
+        df = df.dropna(subset=['inicio', 'fin'])
+        df['inicio_str'] = df['inicio'].dt.strftime('%d-%m-%Y')
+        df['fin_str'] = df['fin'].dt.strftime('%d-%m-%Y')
+        df['duracion'] = (df['fin'] - df['inicio']).dt.days
+        df['mes'] = df['fin'].dt.to_period('M').astype(str)
+        df['rn_trunc'] = df['rn'].str.lower().apply(lambda x: x if len(x) <= 30 else x[:27] + '...')
+        
+        return df, True
+    
+    except Exception as e:
+        debug_print(f"Error al cargar datos: {e}")
+        sample_dates = pd.date_range(start='2023-01-01', periods=3)
+        df = pd.DataFrame({
+            'rn': ['Error - Sin datos', 'Ejemplo 2', 'Ejemplo 3'],
+            'estado': ['Error', 'Error', 'Error'],
+            'afu asignado': ['Sin asignar', 'Sin asignar', 'Sin asignar'],
+            'inicio': sample_dates,
+            'fin': sample_dates + pd.Timedelta(days=30),
+        })
+        df['inicio_str'] = df['inicio'].dt.strftime('%d-%m-%Y')
+        df['fin_str'] = df['fin'].dt.strftime('%d-%m-%Y')
+        df['duracion'] = 30
+        df['mes'] = df['fin'].dt.to_period('M').astype(str)
+        df['rn_trunc'] = df['rn'].str.lower()
+        return df, False
 
-except Exception as e:
-    print(f"Error al cargar datos: {e}")
-    sample_dates = pd.date_range(start='2023-01-01', periods=3)
-    df = pd.DataFrame({
-        'rn': ['Error - Sin datos', 'Ejemplo 2', 'Ejemplo 3'],
-        'estado': ['Error', 'Error', 'Error'],
-        'afu asignado': ['Sin asignar', 'Sin asignar', 'Sin asignar'],
-        'inicio': sample_dates,
-        'fin': sample_dates + pd.Timedelta(days=30),
-    })
-    df['inicio_str'] = df['inicio'].dt.strftime('%d-%m-%Y')
-    df['fin_str'] = df['fin'].dt.strftime('%d-%m-%Y')
-    df['duracion'] = 30
-    df['mes'] = df['fin'].dt.to_period('M').astype(str)
-    df['rn_trunc'] = df['rn'].str.lower()
+# --- Carga inicial de datos ---
+df, carga_exitosa = cargar_datos()
 
 # --- Colores por estado ---
 color_estado = {
@@ -75,7 +85,7 @@ server = app.server
 
 # --- Layout ---
 app.layout = html.Div([
-    html.H1("Gantt analisis funcional Postventas", style={'textAlign': 'center'}),
+    html.H1("Gantt análisis funcional Postventas", style={'textAlign': 'center'}),
     html.Div([
         html.Div([
             html.Label("Mes de entrega:"),
@@ -86,7 +96,7 @@ app.layout = html.Div([
                 value='Todos',
                 clearable=False
             )
-        ], style={'width': '32%', 'display': 'inline-block'}),
+        ], style={'width': '24%', 'display': 'inline-block'}),
         html.Div([
             html.Label("Estado:"),
             dcc.Dropdown(
@@ -96,7 +106,7 @@ app.layout = html.Div([
                 value='Todos',
                 clearable=False
             )
-        ], style={'width': '32%', 'display': 'inline-block', 'marginLeft': '10px'}),
+        ], style={'width': '24%', 'display': 'inline-block', 'marginLeft': '10px'}),
         html.Div([
             html.Label("AFU asignado:"),
             dcc.Dropdown(
@@ -106,7 +116,15 @@ app.layout = html.Div([
                 value='Todos',
                 clearable=False
             )
-        ], style={'width': '32%', 'display': 'inline-block', 'marginLeft': '10px'}),
+        ], style={'width': '24%', 'display': 'inline-block', 'marginLeft': '10px'}),
+        html.Div([
+            html.Button('Actualizar datos', id='refresh-button', 
+                       style={'marginTop': '20px', 'padding': '8px 16px', 'backgroundColor': '#3498db', 
+                              'color': 'white', 'border': 'none', 'borderRadius': '4px', 'cursor': 'pointer'}),
+            html.Div(id='last-update-time', 
+                    children=f"Última actualización: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}",
+                    style={'marginTop': '5px', 'fontSize': '12px'})
+        ], style={'width': '24%', 'display': 'inline-block', 'marginLeft': '10px', 'textAlign': 'center'})
     ], style={'marginBottom': '20px'}),
 
     html.Div([
@@ -122,22 +140,79 @@ app.layout = html.Div([
         )
     ], style={'marginBottom': '20px'}),
 
+    # Añadir un intervalo para actualizaciones automáticas (cada 60 segundos)
+    dcc.Interval(
+        id='interval-component',
+        interval=60*1000,  # en milisegundos (60 segundos)
+        n_intervals=0
+    ),
+    
+    # Almacenar los datos en componente oculto
+    dcc.Store(id='stored-data'),
+    
     html.Div([
         dcc.Graph(id='gantt-graph', style={'height': '80vh'})
     ])
 ])
 
+# Callback para actualizar los datos cuando se hace clic en el botón o por el intervalo
+@app.callback(
+    [Output('stored-data', 'data'),
+     Output('mes-dropdown', 'options'),
+     Output('estado-dropdown', 'options'),
+     Output('afu-dropdown', 'options'),
+     Output('last-update-time', 'children')],
+    [Input('refresh-button', 'n_clicks'),
+     Input('interval-component', 'n_intervals')],
+    [State('mes-dropdown', 'value'),
+     State('estado-dropdown', 'value'),
+     State('afu-dropdown', 'value')]
+)
+def actualizar_datos(n_clicks, n_intervals, mes_actual, estado_actual, afu_actual):
+    # Cargar datos actualizados
+    df_actualizado, _ = cargar_datos()
+    
+    # Actualizar opciones de los dropdowns
+    opciones_mes = [{'label': 'Todos', 'value': 'Todos'}] + [
+        {'label': mes, 'value': mes} for mes in sorted(df_actualizado['mes'].unique())
+    ]
+    
+    opciones_estado = [{'label': 'Todos', 'value': 'Todos'}] + [
+        {'label': estado, 'value': estado} for estado in sorted(df_actualizado['estado'].unique())
+    ]
+    
+    opciones_afu = [{'label': 'Todos', 'value': 'Todos'}] + [
+        {'label': afu, 'value': afu} for afu in sorted(df_actualizado['afu asignado'].unique())
+    ]
+    
+    # Actualizar tiempo de la última actualización
+    tiempo_actualizacion = f"Última actualización: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}"
+    
+    # Convertir DataFrame a diccionario para almacenarlo
+    return df_actualizado.to_dict('records'), opciones_mes, opciones_estado, opciones_afu, tiempo_actualizacion
+
 # --- Callback ---
 @app.callback(
     Output('gantt-graph', 'figure'),
-    Input('mes-dropdown', 'value'),
-    Input('estado-dropdown', 'value'),
-    Input('afu-dropdown', 'value'),
-    Input('theme-switch', 'value')
+    [Input('stored-data', 'data'),
+     Input('mes-dropdown', 'value'),
+     Input('estado-dropdown', 'value'),
+     Input('afu-dropdown', 'value'),
+     Input('theme-switch', 'value')]
 )
-def actualizar_grafico(mes, estado, afu, theme):
-    df_filtrado = df.copy()
+def actualizar_grafico(data, mes, estado, afu, theme):
+    # Convertir datos almacenados de nuevo a DataFrame
+    if not data:
+        # Usar datos iniciales si aún no hay datos almacenados
+        df_filtrado = df.copy()
+    else:
+        df_filtrado = pd.DataFrame(data)
+        # Convertir columnas de fecha de nuevo a datetime
+        for col in ['inicio', 'fin']:
+            if col in df_filtrado.columns:
+                df_filtrado[col] = pd.to_datetime(df_filtrado[col])
 
+    # Aplicar filtros
     if mes != 'Todos':
         df_filtrado = df_filtrado[df_filtrado['mes'] == mes]
     if estado != 'Todos':
@@ -181,7 +256,7 @@ def actualizar_grafico(mes, estado, afu, theme):
         )
 
         fig.update_traces(
-            hovertemplate="<b>%{customdata[0]}</b><br>Inicio: %{customdata[1]}<br>Fin: %{customdata[2]}<br>AFU: %{customdata[4]}",
+            hovertemplate="<b>%{customdata[0]}</b><br>Inicio: %{customdata[1]}<br>Fin: %{customdata[2]}<br>Duración: %{customdata[3]} días<br>AFU: %{customdata[4]}",
             marker=dict(line=dict(width=0.3, color='DarkSlateGrey'))
         )
 
@@ -236,6 +311,7 @@ def actualizar_grafico(mes, estado, afu, theme):
         return fig
 
     except Exception as e:
+        debug_print(f"Error al generar gráfico: {e}")
         return px.scatter(title=f"Error al generar gráfico: {e}")
 
 # --- Ejecutar ---
