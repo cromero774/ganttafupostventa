@@ -75,7 +75,7 @@ server = app.server
 
 # --- Layout ---
 app.layout = html.Div([
-    html.H1("Gantt analisis funcional ATI", style={'textAlign': 'center'}),
+    html.H1("Gantt analisis funcional Postventas", style={'textAlign': 'center'}),
     html.Div([
         html.Div([
             html.Label("Mes de entrega:"),
@@ -177,7 +177,7 @@ def actualizar_grafico(mes, estado, afu, theme):
             color="estado",
             custom_data=["rn", "inicio_str", "fin_str", "duracion", "afu asignado"],
             color_discrete_map=color_estado,
-            title=f"ATI - {estado if estado != 'Todos' else 'Todos los estados'} | {mes if mes != 'Todos' else 'Todos los meses'} | {afu if afu != 'Todos' else 'Todos los AFU'}"
+            title=f"Postventas - {estado if estado != 'Todos' else 'Todos los estados'} | {mes if mes != 'Todos' else 'Todos los meses'} | {afu if afu != 'Todos' else 'Todos los AFU'}"
         )
 
         fig.update_traces(
